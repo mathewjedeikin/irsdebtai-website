@@ -778,6 +778,132 @@
   // (Only works if you added the GET handler I shared earlier in route.ts)
 })();
 </script>
+<script>
+/* Auto-wire chat forms even if IDs differ */
+(function () {
+  function $(sel, root=document){ return root.querySelector(sel); }
+  function $all(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
+
+  function findChatCandidates() {
+    // Priority: known IDs
+    const known = [
+      { form: "#chatForm", input: "#chatInput", log: "#chatLog" },
+      { form: "#mChatForm", input: "#mChatInput", log: "#mChatLog" }
+    ];
+    for (const k of known) {
+      const form = $(k.form), input = $(k.input), log = $(k.log);
+      if (form && input && log) return { form, input, log };
+    }
+
+    // Fallback: last form on page with a text input or textarea
+    const forms = $all("form").reverse();
+    for (const form of forms) {
+      const input = $("textarea, input[type='text'], input:not([type]), input[type='search']", form);
+      if (!input) continue;
+      // Prefer an existing log near the form
+      let log = $("#chatLog") || $("#mChatLog") || form.parentElement.querySelector(".chat-log") || null;
+      if (!log) {
+        // Create a simple log area if none exists
+        log = document.createElement("div");
+        log.className = "chat-log";
+        log.style.cssText = "max-height:280px; overflow:auto; display:flex; flex-direction:column; gap:8px; font-size:14px; border:1px solid rgba(0,0,0,.05); border-radius:12px; padding:12px; background:#fff; margin:10px 0;";
+        form.parentElement.insertBefore(log, form);
+      }
+      return { form, input, log };
+    }
+    return null;
+  }
+
+  function bubble(text, role, log) {
+    const b = document.createElement("div");
+    b.style.maxWidth = "85%";
+    b.style.alignSelf = role === "user" ? "flex-end" : "flex-start";
+    b.style.border = "1px solid rgba(0,0,0,0.08)";
+    b.style.borderRadius = "14px";
+    b.style.padding = "10px 12px";
+    b.style.fontSize = "14px";
+    b.style.background = role === "user" ? "rgba(0,180,255,0.10)" : "#fff";
+    b.textContent = text;
+    log.appendChild(b);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function sendToAPI(text, log) {
+    try {
+      const res = await fetch("/api/groq-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: text }] })
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        bubble(`Error: ${res.status} – ${t.slice(0, 200)}`, "assistant", log);
+        return;
+      }
+      const data = await res.json();
+      bubble(data.reply || "Sorry, no response.", "assistant", log);
+    } catch (e) {
+      bubble("Network error. Please try again.", "assistant", log);
+    }
+  }
+
+  function ensureSubmitButton(form) {
+    // If there's a button without type, or with type=button, make sure submit works
+    const btn = form.querySelector("button");
+    if (btn && (!btn.hasAttribute("type") || btn.getAttribute("type") === "button")) {
+      btn.addEventListener("click", () => form.requestSubmit ? form.requestSubmit() : form.submit());
+    }
+  }
+
+  function main() {
+    const ctx = findChatCandidates();
+    if (!ctx) {
+      console.warn("[chat] No suitable chat form/input found on this page.");
+      return;
+    }
+    const { form, input, log } = ctx;
+
+    ensureSubmitButton(form);
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = (input.value || "").trim();
+      if (!q) return;
+      bubble(q, "user", log);
+      input.value = "";
+      bubble("Thinking…", "assistant", log);
+      // Replace the placeholder with real reply when it arrives
+      log.lastChild.remove(); // remove "Thinking…" bubble
+      bubble("Thinking…", "assistant", log); // re-add so we can replace on success
+      (async () => {
+        try {
+          const res = await fetch("/api/groq-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: [{ role: "user", content: q }] })
+          });
+          if (!res.ok) {
+            const t = await res.text();
+            log.lastChild.textContent = `Error: ${res.status} – ${t.slice(0, 200)}`;
+            return;
+          }
+          const data = await res.json();
+          log.lastChild.textContent = data.reply || "Sorry, no response.";
+        } catch {
+          log.lastChild.textContent = "Network error. Please try again.";
+        }
+      })();
+    });
+  }
+
+  // Run once DOM is ready (script is at bottom, but just in case)
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", main);
+  } else {
+    main();
+  }
+})();
+</script>
 
 </body>
 </html>
