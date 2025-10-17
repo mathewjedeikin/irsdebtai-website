@@ -719,5 +719,65 @@
   });
 })();
 </script>
+  <script>
+(function () {
+  async function wire(formId, inputId, logId) {
+    const form = document.getElementById(formId);
+    const input = document.getElementById(inputId);
+    const log = document.getElementById(logId);
+    if (!form || !input || !log) return; // If this view doesn't have these elements, silently skip.
+
+    function addMsg(text, role) {
+      const bubble = document.createElement('div');
+      bubble.style.maxWidth = '85%';
+      bubble.style.margin = role === 'user' ? '0 0 0 auto' : '0';
+      bubble.style.border = '1px solid rgba(0,0,0,0.08)';
+      bubble.style.borderRadius = '14px';
+      bubble.style.padding = '10px 12px';
+      bubble.style.fontSize = '14px';
+      bubble.style.background = role === 'user' ? 'rgba(0,180,255,0.10)' : '#fff';
+      bubble.textContent = text;
+      log.appendChild(bubble);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = (input.value || '').trim();
+      if (!q) return;
+      addMsg(q, 'user');
+      input.value = '';
+      addMsg('Thinking…', 'assistant');
+
+      try {
+        const res = await fetch('/api/groq-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [{ role: 'user', content: q }] })
+        });
+
+        if (!res.ok) {
+          const t = await res.text();
+          log.lastChild.textContent = `Error: ${res.status} – ${t.slice(0, 200)}`;
+          return;
+        }
+
+        const data = await res.json();
+        log.lastChild.textContent = data.reply || 'Sorry, no response.';
+      } catch (err) {
+        log.lastChild.textContent = 'Network error. Please try again.';
+      }
+    });
+  }
+
+  // Try wiring both desktop and mobile IDs. If elements aren't present, each call no-ops.
+  wire('chatForm', 'chatInput', 'chatLog');     // desktop-style IDs (if your page uses them)
+  wire('mChatForm', 'mChatInput', 'mChatLog');  // mobile-style IDs (if your page uses them)
+
+  // Optional: quick GET check so you can visit /api/groq-chat in a browser and see {"ok":true}
+  // (Only works if you added the GET handler I shared earlier in route.ts)
+})();
+</script>
+
 </body>
 </html>
