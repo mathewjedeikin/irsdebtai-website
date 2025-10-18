@@ -185,7 +185,7 @@
     <!-- CHAT -->
     <section id="view-chat" class="stack">
       <div class="card chat-wrap">
-        <div id="chat-log" class="chat-log">
+        <div id="chatLog" class="chat-log">
           <div class="msg assistant"><div class="avatar">AI</div><div class="bubble">
             <p><strong>We can work on this together!</strong> Tell me what's going on with your IRS notice, and I’ll break it down — step by step. You’re not alone.</p>
             <div class="row" style="margin-top:6px;"><span class="chip">Encouraging</span><span class="chip">Judgment-free</span></div>
@@ -194,8 +194,8 @@
             <p>We can explore an Installment Agreement, an Offer in Compromise, or Currently Not Collectible status. When you’re ready, jump to <em>Settle</em> to generate draft PDFs for IRS forms.</p>
           </div></div>
         </div>
-        <form class="input-bar" onsubmit="return false;">
-          <input id="chat-input" type="text" placeholder="Ask anything… e.g., “I owe $16,000—can I set up monthly payments?”" />
+        <form class="input-bar" id="chatForm">
+          <input id="chatInput" type="text" placeholder="Ask anything… e.g., “I owe $16,000—can I set up monthly payments?”" />
           <button class="btn" id="send-btn">Send</button>
         </form>
       </div>
