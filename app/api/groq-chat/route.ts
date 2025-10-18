@@ -21,7 +21,7 @@ export async function POST(req: Request) {
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192",  // If iOS uses a different model, put that exact string here
+        model: "llama-3.1-8b-instant",  // If iOS uses a different model, put that exact string here
         messages,
         temperature: 0.2
       })
