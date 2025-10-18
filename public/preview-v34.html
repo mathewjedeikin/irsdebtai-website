@@ -721,79 +721,96 @@
 </script>
 <script>
 (function () {
-  // ---------- helpers ----------
   const $ = (sel, root=document) => root.querySelector(sel);
   const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
 
-  // Escape HTML to prevent any accidental tags from the model becoming active
   function esc(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
-  // Minimal Markdown -> HTML (headings, bold, lists, paragraphs)
-  function mdToHtml(raw) {
-    let t = String(raw || "").replace(/\r\n/g, "\n").trim();
+  // Minimal markdown link -> <a>
+  function linkify(s) {
+    return s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
 
-    // Inject breaks BEFORE headings and list markers if they aren't on their own line
-    t = t
-      .replace(/\s*##\s+/g, "\n\n## ")
-      .replace(/\s*###\s+/g, "\n\n### ")
-      .replace(/(\S)\s+-\s/g, "$1\n- "); // ensure each "- " starts a new line
+  // Build HTML blocks grouped by section:
+  // Each section starts with "## " or "### " heading.
+  // We gather following paragraphs and lists until next heading.
+  function mdToSectionBlocks(md) {
+    const lines = String(md || "").replace(/\r\n/g,"\n").split("\n");
 
-    // Escape HTML first (we'll re-introduce safe tags below)
-    t = esc(t);
+    const sections = [];
+    let current = null;
+    let pendingPara = [];            // lines in current paragraph
+    let pendingList = [];            // items in current bullet list
 
-    // Headings
-    t = t
-      .replace(/(^|\n)###\s+(.+?)(?=\n|$)/g, '$1<h3>$2</h3>')
-      .replace(/(^|\n)##\s+(.+?)(?=\n|$)/g, '$1<h2>$2</h2>');
-
-    // Bold (**text**)
-    t = t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-    // Build lists: group consecutive lines starting with "- "
-    const lines = t.split("\n");
-    let out = [];
-    let ul = null;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const m = line.match(/^-\s+(.*)/);
-      if (m) {
-        if (!ul) {
-          ul = [];
-          out.push("__OPEN_UL__");
-        }
-        ul.push(`<li>${m[1]}</li>`);
-        // If next line isn't a list item, close the UL
-        const next = lines[i+1] || "";
-        if (!/^-\s+/.test(next)) {
-          out.push(ul.join(""));
-          out.push("__CLOSE_UL__");
-          ul = null;
-        }
-      } else {
-        out.push(line);
+    function flushPara() {
+      if (pendingPara.length) {
+        const txt = esc(pendingPara.join(" ").trim());
+        current.parts.push(`<p>${linkify(txt)}</p>`);
+        pendingPara = [];
       }
     }
-    t = out.join("\n")
-      .replace(/__OPEN_UL__/g, "<ul>")
-      .replace(/__CLOSE_UL__/g, "</ul>");
+    function flushList() {
+      if (pendingList.length) {
+        const items = pendingList.map(li => `<li>${linkify(esc(li))}</li>`).join("");
+        current.parts.push(`<ul>${items}</ul>`);
+        pendingList = [];
+      }
+    }
+    function startSection(level, title) {
+      if (!current) {
+        current = { parts: [] };
+      } else {
+        // close previous section
+        flushPara(); flushList();
+        sections.push(current);
+        current = { parts: [] };
+      }
+      const tag = level === 3 ? "h3" : "h2";
+      current.parts.push(`<${tag}>${linkify(esc(title.trim()))}</${tag}>`);
+    }
 
-    // Convert remaining double newlines to paragraphs; single newlines to <br>
-    // First protect block tags so we don't wrap them in <p>
-    t = t.replace(/(\n){3,}/g, "\n\n");
-    const blocks = t.split(/\n{2,}/).map(chunk => chunk.trim()).filter(Boolean);
-    t = blocks.map(chunk => {
-      // Don't wrap block elements again
-      if (/^<h2>|^<h3>|^<ul>/.test(chunk)) return chunk;
-      // Keep single newlines inside paragraphs
-      return `<p>${chunk.replace(/\n/g, "<br>")}</p>`;
-    }).join("\n");
+    for (let raw of lines) {
+      const line = raw.trim();
 
-    return t;
+      // Ignore stray lone hash markers
+      if (/^#{1,6}$/.test(line)) continue;
+
+      // Headings
+      let m;
+      if ((m = line.match(/^###\s+(.+)/))) { flushPara(); flushList(); startSection(3, m[1]); continue; }
+      if ((m = line.match(/^##\s+(.+)/)))  { flushPara(); flushList(); startSection(2, m[1]); continue; }
+
+      // Bullets
+      if ((m = line.match(/^-\s+(.+)/))) {
+        flushPara();
+        pendingList.push(m[1].trim());
+        continue;
+      }
+
+      // Blank line => paragraph/list separator
+      if (line === "") {
+        flushPara(); flushList();
+        continue;
+      }
+
+      // Otherwise: normal paragraph text
+      pendingList.length && flushList();
+      pendingPara.push(line);
+    }
+
+    // Flush tail
+    if (!current) current = { parts: [] };
+    flushPara(); flushList();
+    if (current.parts.length) sections.push(current);
+
+    // If there was no heading at all, produce a single generic section
+    if (!sections.length) {
+      sections.push({ parts: [`<p>${linkify(esc(lines.join(" ").trim()))}</p>`] });
+    }
+
+    return sections.map(sec => sec.parts.join("\n"));
   }
 
   function bubbleHtml(html, role, log) {
@@ -805,7 +822,7 @@
     b.style.padding = "10px 12px";
     b.style.fontSize = "14px";
     b.style.background = role === "user" ? "rgba(0,180,255,0.10)" : "#fff";
-    b.innerHTML = html; // render our safe HTML
+    b.innerHTML = html;
     log.appendChild(b);
     log.scrollTop = log.scrollHeight;
   }
@@ -821,8 +838,8 @@
       body: JSON.stringify({ messages: [{ role: "user", content: userText }] })
     });
     if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`HTTP ${res.status}: ${txt.slice(0, 300)}`);
+      const t = await res.text();
+      throw new Error(`HTTP ${res.status}: ${t.slice(0, 300)}`);
     }
     const data = await res.json();
     return data?.reply || "Sorry, no response.";
@@ -838,7 +855,7 @@
   }
 
   function wire() {
-    // Prefer your known structure; fall back if needed
+    // Prefer your existing structure; fall back if needed
     const form = document.querySelector(".input-bar") || $("#chatForm") || $("#mChatForm") || $$("form").slice(-1)[0];
     if (!form) return console.warn("[chat] no form found");
 
@@ -863,37 +880,28 @@
       try {
         const raw = await callAPI(q);
         thinking.remove();
-        const html = mdToHtml(raw);
-        // Split on block boundaries so we get multiple bubbles (h2/h3/ul/p)
-        const parts = html.split(/(?=<h2>|<h3>|<ul>|<p>)/g).filter(Boolean);
-        for (const chunk of parts) bubbleHtml(chunk, "assistant", log);
+        const blocks = mdToSectionBlocks(raw);   // ← group by section
+        blocks.forEach(html => bubbleHtml(html, "assistant", log));
       } catch (err) {
         thinking.textContent = String(err).slice(0, 300);
       }
     }
 
-    form.removeAttribute("onsubmit"); // avoid inline blockers
+    form.removeAttribute("onsubmit");
     form.addEventListener("submit", (e) => { e.preventDefault(); sendMessage(); });
-
-    if (sendBtn) {
-      sendBtn.addEventListener("click", (e) => { e.preventDefault(); sendMessage(); });
-    }
+    if (sendBtn) sendBtn.addEventListener("click", (e) => { e.preventDefault(); sendMessage(); });
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        sendMessage();
+        e.preventDefault(); sendMessage();
       }
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", wire);
-  } else {
-    wire();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
+  else wire();
 })();
 </script>
 
-
+</body>
 </html>
