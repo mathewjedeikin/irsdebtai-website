@@ -20,11 +20,19 @@ export async function POST(req: Request) {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",  // If iOS uses a different model, put that exact string here
-        messages,
-        temperature: 0.2
-      })
+body: JSON.stringify({
+  model: "llama-3.1-8b-instant", // or your chosen model
+  messages: [
+    {
+      role: "system",
+      content:
+        "You are IRSdebtAI. Format answers in short sections with headings and bullet points. Keep paragraphs under 3 lines. Use numbered or bulleted lists for steps. Be concise, supportive, and avoid giant blocks of text."
+    },
+    ...messages
+  ],
+  temperature: 0.2
+})
+
     });
 
     if (!groqRes.ok) {
