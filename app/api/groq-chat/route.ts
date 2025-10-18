@@ -21,17 +21,22 @@ export async function POST(req: Request) {
         "Authorization": `Bearer ${apiKey}`,
       },
 body: JSON.stringify({
-  model: "llama-3.1-8b-instant", // or your chosen model
+  model: "llama-3.1-8b-instant", // or llama-3.3-70b-versatile
   messages: [
     {
       role: "system",
       content:
-        "You are IRSdebtAI. Format answers in short sections with headings and bullet points. Keep paragraphs under 3 lines. Use numbered or bulleted lists for steps. Be concise, supportive, and avoid giant blocks of text."
+        "You are IRSdebtAI. Always format answers using short sections and clear bullets. Use markdown like:\n\n" +
+        "## Heading\n" +
+        "- bullet\n" +
+        "- bullet\n\n" +
+        "Put a BLANK LINE between paragraphs/sections. Avoid giant blocks of text."
     },
     ...messages
   ],
   temperature: 0.2
 })
+
 
     });
 
