@@ -907,4 +907,111 @@
 </script>
 
 </body>
+  <script>
+(function () {
+  // ---- helpers ----
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+  function bubble(text, role, log) {
+    const b = document.createElement("div");
+    b.style.maxWidth = "85%";
+    b.style.alignSelf = role === "user" ? "flex-end" : "flex-start";
+    b.style.border = "1px solid rgba(0,0,0,0.08)";
+    b.style.borderRadius = "14px";
+    b.style.padding = "10px 12px";
+    b.style.fontSize = "14px";
+    b.style.background = role === "user" ? "rgba(0,180,255,0.10)" : "#fff";
+    b.style.whiteSpace = "pre-wrap"; // preserve \n and wrapping
+    b.textContent = text;
+    log.appendChild(b);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function callAPI(userText) {
+    const res = await fetch("/api/groq-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: userText }] })
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`HTTP ${res.status}: ${t.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    return (data && data.reply) ? String(data.reply) : "Sorry, no response.";
+  }
+
+  function ensureLogNear(form, existingLog) {
+    if (existingLog) return existingLog;
+    const log = document.createElement("div");
+    log.className = "chat-log";
+    log.style.cssText = "max-height:280px; overflow:auto; display:flex; flex-direction:column; gap:8px; font-size:14px; border:1px solid rgba(0,0,0,.05); border-radius:12px; padding:12px; background:#fff; margin:10px 0;";
+    form.parentElement.insertBefore(log, form);
+    return log;
+  }
+
+  function wire() {
+    // Try your likely element names first:
+    const form = $(".input-bar") || $("#chatForm") || $("#mChatForm") || $$("form").slice(-1)[0];
+    if (!form) return console.warn("[chat] no form found");
+
+    const input = $("#chatInput") || $("#chat-input") || $("textarea, input[type=text], input:not([type]), input[type=search]", form);
+    if (!input) return console.warn("[chat] no input found");
+
+    const log = ensureLogNear(form, $("#chatLog") || $("#chat-log") || $(".chat-log"));
+    const sendBtn = $("#send-btn") || $("button", form);
+
+    async function sendMessage() {
+      const q = (input.value || "").trim();
+      if (!q) return;
+      bubble(q, "user", log);
+      input.value = "";
+
+      // Thinking bubble
+      const thinking = document.createElement("div");
+      thinking.style.cssText = "max-width:85%; align-self:flex-start; border:1px solid rgba(0,0,0,0.08); border-radius:14px; padding:10px 12px; font-size:14px; background:#fff; white-space:pre-wrap;";
+      thinking.textContent = "Thinking…";
+      log.appendChild(thinking);
+      log.scrollTop = log.scrollHeight;
+
+      try {
+        const reply = await callAPI(q);
+        thinking.remove();
+
+        // Split into multiple bubbles on blank lines; still preserves single newlines via pre-wrap
+        reply.replace(/\r\n/g, "\n").split(/\n{2,}/).forEach(chunk => {
+          const text = chunk.trim();
+          if (text) bubble(text, "assistant", log);
+        });
+      } catch (err) {
+        thinking.textContent = String(err).slice(0, 300);
+      }
+    }
+
+    // Don’t rely on <form onsubmit>; some pages set onsubmit="return false"
+    form.addEventListener("submit", (e) => { e.preventDefault(); sendMessage(); });
+
+    if (sendBtn) {
+      // If button is type="button", make it act like submit
+      sendBtn.addEventListener("click", (e) => { e.preventDefault(); sendMessage(); });
+    }
+
+    // Allow Enter to send (Shift+Enter = newline for textareas)
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wire);
+  } else {
+    wire();
+  }
+})();
+</script>
+
 </html>
